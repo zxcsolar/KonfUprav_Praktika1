@@ -1,0 +1,28 @@
+Фактическая интерактивная проверка (PTY), 19.09.2026.
+Перед запуском в окружении процесса задано HOME=/home/student.
+Запуск: python console.py --vfs student-vfs
+
+student-vfs:/$ ls -l
+ls: аргументы = ["-l"]
+student-vfs:/$ cd "$HOME"
+cd: аргументы = ["/home/student"]
+student-vfs:/$ ls '${HOME}' "${HOME}/docs" "two words"
+ls: аргументы = ["${HOME}", "/home/student/docs", "two words"]
+student-vfs:/$ ls "$VFS_DEMO_UNDEFINED_927"
+ls: аргументы = [""]
+student-vfs:/$ unknown
+Ошибка: команда не найдена: unknown
+student-vfs:/$ ls "oops
+Ошибка синтаксиса: незакрытая кавычка "
+student-vfs:/$ ls ${HOME
+Ошибка синтаксиса: не закрыта переменная ${...}
+student-vfs:/$ ls | cd
+Ошибка синтаксиса: оператор не поддерживается: |
+student-vfs:/$ exit extra
+Ошибка: exit не принимает аргументы.
+student-vfs:/$ cd /tmp
+cd: аргументы = ["/tmp"]
+student-vfs:/$ exit
+Выход из эмулятора.
+
+Код завершения: 0.
