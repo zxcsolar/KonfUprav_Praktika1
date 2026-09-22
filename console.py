@@ -1,4 +1,5 @@
 import argparse
+import configparser
 import json
 import os
 import re
@@ -101,6 +102,85 @@ def parse_command(line: str, env: Mapping[str, str] | None = None) -> list[str]:
     flush()
     return words
 
+def load_config(config_path: str) -> dict[str, str]:
+    """Загружает параметры эмулятора из INI-файла."""
+    config = configparser.ConfigParser()
+
+    try:
+        with open(config_path, encoding="utf-8") as file:
+            config.read_file(file)
+    except (OSError, configparser.Error) as error:
+        raise ValueError(
+            f"ошибка чтения конфигурационного файла: {error}"
+        ) from error
+
+    if "emulator" not in config:
+        raise ValueError(
+            "в конфигурационном файле отсутствует секция [emulator]"
+        )
+
+    return dict(config["emulator"])
+
+def execute_command(words: list[str]) -> bool:
+    """Выполняет одну команду эмулятора."""
+    command, *args = words
+
+    if command in ("ls", "cd"):
+        print(
+            f"{command}: аргументы = "
+            f"{json.dumps(args, ensure_ascii=False)}"
+        )
+        return True
+
+    if command == "exit":
+        if args:
+            print(
+                "Ошибка: exit не принимает аргументы.",
+                file=sys.stderr
+            )
+            return False
+        print("Выход из эмулятора.")
+        raise SystemExit(0)
+
+    print(
+        f"Ошибка: команда не найдена: {command}",
+        file=sys.stderr
+    )
+    return False
+
+def run_startup_script(path: str, vfs_name: str) -> bool:
+    """Выполняет команды из стартового скрипта."""
+    try:
+        with open(path, encoding="utf-8") as file:
+            lines = file.readlines()
+    except OSError as error:
+        print(
+            f"Ошибка стартового скрипта: {error}",
+            file=sys.stderr
+        )
+        return False
+
+    for line in lines:
+        line = line.strip()
+
+        if not line:
+            continue
+
+        print(f"{vfs_name}:/$ {line}")
+
+        try:
+            words = parse_command(line)
+        except ParseError as error:
+            print(
+                f"Ошибка синтаксиса: {error}",
+                file=sys.stderr
+            )
+            return False
+
+        if not execute_command(words):
+            return False
+
+    return True
 
 def run(vfs_name: str) -> int:
     while True:
@@ -119,26 +199,49 @@ def run(vfs_name: str) -> int:
             continue
         if not words:
             continue
-        command, *args = words
-        if command in ("ls", "cd"):
-            print(f"{command}: аргументы = {json.dumps(args, ensure_ascii=False)}")
-        elif command == "exit":
-            if args:
-                print("Ошибка: exit не принимает аргументы.", file=sys.stderr)
-                continue
-            print("Выход из эмулятора.")
-            return 0
-        else:
-            print(f"Ошибка: команда не найдена: {command}", file=sys.stderr)
+        execute_command(words)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--vfs", default="demo-vfs", help="имя виртуальной ФС")
+    parser.add_argument("--vfs", help="путь к физическому расположению VFS")
+    parser.add_argument(
+        "--startup",
+        help="путь к стартовому скрипту"
+    )
+    parser.add_argument(
+        "--config",
+        help="путь к конфигурационному INI-файлу"
+    )
     options = parser.parse_args()
-    if not options.vfs.strip() or any(ord(ch) < 32 or ord(ch) == 127 for ch in options.vfs):
+
+    config = {}
+
+    if options.config:
+        try:
+            config = load_config(options.config)
+        except ValueError as error:
+            parser.error(str(error))
+
+    vfs_name = options.vfs or config.get("vfs") or "demo-vfs"
+    startup_path = options.startup or config.get("startup_script")
+
+    print("Параметры запуска:")
+    print(f"  VFS: {vfs_name}")
+    print(f"  Стартовый скрипт: {startup_path or 'не указан'}")
+    print(f"  Конфигурационный файл: {options.config or 'не указан'}")
+
+    if not vfs_name.strip() or any(ord(ch) < 32 or ord(ch) == 127 for ch in vfs_name):
         parser.error("имя VFS должно быть непустым и без управляющих символов")
-    return run(options.vfs)
+    if startup_path:
+        if not run_startup_script(startup_path, vfs_name):
+            print(
+                "Выполнение стартового скрипта остановлено.",
+                file=sys.stderr
+            )
+            return 1
+        
+    return run(vfs_name)
 
 
 if __name__ == "__main__":
